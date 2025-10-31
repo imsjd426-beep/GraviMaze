@@ -354,37 +354,100 @@ function updateKeyboardTilt() {
   tilt.y = (keyState.ArrowDown ? 1 : 0) - (keyState.ArrowUp ? 1 : 0);
 }
 
-// 📱 Gyroscope
+// ------------------------
+// Robust Gyro + Start code
+// ------------------------
+
+// debug overlay so you can see α / β / γ values while testing
+const gyroDebug = document.createElement('div');
+gyroDebug.id = 'gyroDebug';
+Object.assign(gyroDebug.style, {
+  position: 'fixed',
+  left: '12px',
+  bottom: '12px',
+  padding: '8px 10px',
+  background: 'rgba(0,0,0,0.6)',
+  color: '#9ff',
+  fontSize: '13px',
+  borderRadius: '8px',
+  zIndex: 9999,
+  pointerEvents: 'none',
+});
+gyroDebug.textContent = 'gyro: - , - , -';
+document.body.appendChild(gyroDebug);
+
+// single handler used for both possible events
 function handleDeviceOrientation(e) {
-  tilt.x = (e.gamma || 0) / 45;
-  tilt.y = (e.beta || 0) / 45;
+  const alpha = (typeof e.alpha !== 'undefined') ? e.alpha : null;
+  const beta  = (typeof e.beta  !== 'undefined') ? e.beta  : null;
+  const gamma = (typeof e.gamma !== 'undefined') ? e.gamma : null;
+
+  // update debug overlay
+  gyroDebug.textContent = `gyro: α:${alpha?.toFixed(1) ?? '-'}  β:${beta?.toFixed(1) ?? '-'}  γ:${gamma?.toFixed(1) ?? '-'}`;
+
+  // map to tilt (tune sensitivity here)
+  // gamma -> left/right -> tilt.x, beta -> front/back -> tilt.y
+  tilt.x = (gamma || 0) / 30; // divisor 30 => stronger response
+  tilt.y = (beta  || 0) / 30;
 }
 
-const enableGyroBtn = document.getElementById("enableGyroBtn");
-enableGyroBtn.addEventListener("click", async () => {
-  if (typeof DeviceOrientationEvent.requestPermission === "function") {
-    const permission = await DeviceOrientationEvent.requestPermission();
-    if (permission === "granted") {
-      window.addEventListener("deviceorientation", handleDeviceOrientation);
-      enableGyroBtn.style.display = "none";
-    } else alert("Gyro permission denied.");
-  } else {
-    window.addEventListener("deviceorientation", handleDeviceOrientation);
-    enableGyroBtn.style.display = "none";
+// ensure we attach only once
+let _gyroAttached = false;
+async function enableGyroPermission() {
+  if (_gyroAttached) return true;
+  try {
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      // iOS / some browsers require explicit permission
+      const permission = await DeviceOrientationEvent.requestPermission();
+      if (permission !== 'granted') {
+        alert('Gyroscope permission denied. Tap Enable Gyro and allow the site to use motion sensors.');
+        return false;
+      }
+    }
+    // attach both event types: some browsers/devices use one or the other
+    window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+    window.addEventListener('deviceorientationabsolute', handleDeviceOrientation, true);
+
+    _gyroAttached = true;
+    const btn = document.getElementById('enableGyroBtn');
+    if (btn) btn.style.display = 'none';
+    console.log('Gyro listeners attached');
+    return true;
+  } catch (err) {
+    console.error('enableGyroPermission error', err);
+    alert('Error enabling gyroscope: ' + String(err));
+    return false;
   }
-});
+}
 
-// ▶️ Start
-document.getElementById("startButton").addEventListener("click", () => {
-  startLevel(0);
-  requestAnimationFrame(loop);
-});
+// wire the Enable Gyro button (keeps the same UI)
+const enableGyroBtn = document.getElementById('enableGyroBtn');
+if (enableGyroBtn) {
+  enableGyroBtn.addEventListener('click', async () => {
+    await enableGyroPermission();
+  });
+}
 
+// Start button: ensure gyro permission is requested (if available) as part of the user gesture
+const startBtn = document.getElementById('startButton');
+if (startBtn) {
+  startBtn.addEventListener('click', async () => {
+    // request permission / attach listeners if not already
+    await enableGyroPermission().catch(()=>{});
+    // start level and loop
+    startLevel(0);
+    // guard so loop starts only once
+    if (!window._gameLoopStarted) {
+      window._gameLoopStarted = true;
+      requestAnimationFrame(loop);
+    }
+  });
+}
+
+// Keep restart/next buttons as they were
 document.getElementById("restartBtn").addEventListener("click", () => startLevel(currentLevel));
 document.getElementById("nextBtn").addEventListener("click", () => startLevel((currentLevel + 1) % 10));
-
-startLevel(0);
-draw();
 </script>
 </body>
 </html>
