@@ -254,13 +254,11 @@ function updatePhysics() {
   ball.vy += tilt.y * gravity;
   ball.vx *= damping;
   ball.vy *= damping;
-  // Limit max ball speed
   ball.vx = Math.max(Math.min(ball.vx, 8), -8);
   ball.vy = Math.max(Math.min(ball.vy, 8), -8);
   ball.x += ball.vx;
   ball.y += ball.vy;
 
-  // Wall collisions
   maze.forEach(wall => {
     if (
       ball.x + ball.r > wall.x &&
@@ -286,7 +284,6 @@ function updatePhysics() {
     }
   });
 
-  // Goal detection
   const dx = ball.x - goal.x, dy = ball.y - goal.y;
   const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist < ball.r + goal.r) {
@@ -309,17 +306,13 @@ function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const maze = levels[currentLevel];
   if (!maze) return;
-
-  // Maze
-ctx.fillStyle = "rgba(255,255,255,0.25)";
-ctx.strokeStyle = "rgba(255,255,255,0.5)";
-ctx.lineWidth = 1.5;
-maze.forEach(wall => {
-  ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
-  ctx.strokeRect(wall.x, wall.y, wall.width, wall.height);
-});
-
-  // Goal
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  ctx.strokeStyle = "rgba(255,255,255,0.5)";
+  ctx.lineWidth = 1.5;
+  maze.forEach(wall => {
+    ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+    ctx.strokeRect(wall.x, wall.y, wall.width, wall.height);
+  });
   const grd = ctx.createRadialGradient(goal.x, goal.y, 0, goal.x, goal.y, goal.r);
   grd.addColorStop(0, "#6EE7B7");
   grd.addColorStop(1, "transparent");
@@ -327,125 +320,69 @@ maze.forEach(wall => {
   ctx.beginPath();
   ctx.arc(goal.x, goal.y, goal.r, 0, Math.PI * 2);
   ctx.fill();
-
-  // Ball
   ctx.fillStyle = "#7C6BFF";
   ctx.beginPath();
   ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
   ctx.fill();
 }
 
-// 🔁 Game loop
+// 🔁 Game loop (pure gyro)
 function loop() {
-  updateKeyboardTilt();
   updatePhysics();
   draw();
   updateTime();
   requestAnimationFrame(loop);
 }
 
-// 🧭 Keyboard controls
-const keyState = { ArrowLeft:false, ArrowRight:false, ArrowUp:false, ArrowDown:false };
-document.addEventListener("keydown", e => { if (e.key in keyState) keyState[e.key] = true; });
-document.addEventListener("keyup", e => { if (e.key in keyState) keyState[e.key] = false; });
-
-function updateKeyboardTilt() {
-  tilt.x = (keyState.ArrowRight ? 1 : 0) - (keyState.ArrowLeft ? 1 : 0);
-  tilt.y = (keyState.ArrowDown ? 1 : 0) - (keyState.ArrowUp ? 1 : 0);
-}
-
-// ------------------------
-// Robust Gyro + Start code
-// ------------------------
-
-// debug overlay so you can see α / β / γ values while testing
+// 🌐 Gyroscope Setup
 const gyroDebug = document.createElement('div');
-gyroDebug.id = 'gyroDebug';
 Object.assign(gyroDebug.style, {
-  position: 'fixed',
-  left: '12px',
-  bottom: '12px',
-  padding: '8px 10px',
-  background: 'rgba(0,0,0,0.6)',
-  color: '#9ff',
-  fontSize: '13px',
-  borderRadius: '8px',
-  zIndex: 9999,
-  pointerEvents: 'none',
+  position: 'fixed', left: '12px', bottom: '12px',
+  padding: '8px 10px', background: 'rgba(0,0,0,0.6)',
+  color: '#9ff', fontSize: '13px', borderRadius: '8px', zIndex: 9999
 });
 gyroDebug.textContent = 'gyro: - , - , -';
 document.body.appendChild(gyroDebug);
 
-// single handler used for both possible events
 function handleDeviceOrientation(e) {
-  const alpha = (typeof e.alpha !== 'undefined') ? e.alpha : null;
-  const beta  = (typeof e.beta  !== 'undefined') ? e.beta  : null;
-  const gamma = (typeof e.gamma !== 'undefined') ? e.gamma : null;
-
-  // update debug overlay
-  gyroDebug.textContent = `gyro: α:${alpha?.toFixed(1) ?? '-'}  β:${beta?.toFixed(1) ?? '-'}  γ:${gamma?.toFixed(1) ?? '-'}`;
-
-  // map to tilt (tune sensitivity here)
-  // gamma -> left/right -> tilt.x, beta -> front/back -> tilt.y
-  tilt.x = (gamma || 0) / 30; // divisor 30 => stronger response
-  tilt.y = (beta  || 0) / 30;
+  const alpha = e.alpha ?? 0, beta = e.beta ?? 0, gamma = e.gamma ?? 0;
+  gyroDebug.textContent = `gyro: α:${alpha.toFixed(1)}  β:${beta.toFixed(1)}  γ:${gamma.toFixed(1)}`;
+  tilt.x = gamma / 30;
+  tilt.y = beta / 30;
 }
 
-// ensure we attach only once
 let _gyroAttached = false;
 async function enableGyroPermission() {
   if (_gyroAttached) return true;
   try {
-    if (typeof DeviceOrientationEvent !== 'undefined' &&
-        typeof DeviceOrientationEvent.requestPermission === 'function') {
-      // iOS / some browsers require explicit permission
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
       const permission = await DeviceOrientationEvent.requestPermission();
       if (permission !== 'granted') {
-        alert('Gyroscope permission denied. Tap Enable Gyro and allow the site to use motion sensors.');
+        alert('Please allow motion sensors.');
         return false;
       }
     }
-    // attach both event types: some browsers/devices use one or the other
-    window.addEventListener('deviceorientation', handleDeviceOrientation, true);
-    window.addEventListener('deviceorientationabsolute', handleDeviceOrientation, true);
-
+    window.addEventListener('deviceorientation', handleDeviceOrientation);
+    window.addEventListener('deviceorientationabsolute', handleDeviceOrientation);
     _gyroAttached = true;
-    const btn = document.getElementById('enableGyroBtn');
-    if (btn) btn.style.display = 'none';
-    console.log('Gyro listeners attached');
+    document.getElementById('enableGyroBtn').style.display = 'none';
     return true;
   } catch (err) {
-    console.error('enableGyroPermission error', err);
-    alert('Error enabling gyroscope: ' + String(err));
+    alert('Error enabling gyroscope: ' + err);
     return false;
   }
 }
 
-// wire the Enable Gyro button (keeps the same UI)
-const enableGyroBtn = document.getElementById('enableGyroBtn');
-if (enableGyroBtn) {
-  enableGyroBtn.addEventListener('click', async () => {
-    await enableGyroPermission();
-  });
-}
-
-// Start button: ensure gyro permission is requested (if available) as part of the user gesture
-const startBtn = document.getElementById('startButton');
-if (startBtn) {
-  startBtn.addEventListener('click', async () => {
-    // request permission / attach listeners if not already
-    await enableGyroPermission().catch(()=>{});
-    // start level and loop
-    startLevel(0);
-    // guard so loop starts only once
-    if (!window._gameLoopStarted) {
-      window._gameLoopStarted = true;
-      requestAnimationFrame(loop);
-    }
-  });
-}
-
-// Keep restart/next buttons as they were
+// 🔘 Button bindings
+document.getElementById('enableGyroBtn').addEventListener('click', enableGyroPermission);
+document.getElementById('startButton').addEventListener('click', async () => {
+  await enableGyroPermission();
+  startLevel(0);
+  if (!window._gameLoopStarted) {
+    window._gameLoopStarted = true;
+    requestAnimationFrame(loop);
+  }
+});
 document.getElementById("restartBtn").addEventListener("click", () => startLevel(currentLevel));
 document.getElementById("nextBtn").addEventListener("click", () => startLevel((currentLevel + 1) % 10));
 </script>
